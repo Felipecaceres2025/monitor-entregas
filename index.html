@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor de traslados en tránsito · Castaño</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Archivo+Narrow:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  :root{
+    --espresso:#2A211B; --chestnut:#7A4A28; --amber:#C98A3A;
+    --paper:#EDE8DF; --card:#FBFAF7; --line:#E1D9CC; --ink:#2A211B; --muted:#8B7E6E;
+    --ok:#2F8F5B; --ok-bg:#E7F1EA; --warn:#D98A1F; --warn-bg:#FBEFD9; --crit:#C4432B; --crit-bg:#F7E3DE;
+    --shadow:0 1px 2px rgba(42,33,27,.06),0 4px 16px rgba(42,33,27,.05);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  .num{font-family:'Archivo Narrow','Archivo',sans-serif;font-variant-numeric:tabular-nums}
+
+  header.rail{background:var(--espresso);color:#F3ECE2;padding:13px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .brand{display:flex;align-items:baseline;gap:9px;min-width:0}
+  .brand .mark{font-family:'Archivo';font-weight:800;letter-spacing:.14em;font-size:15px;text-transform:uppercase}
+  .brand .sub{font-family:'Archivo Narrow';font-weight:600;letter-spacing:.03em;color:var(--amber);font-size:12.5px;text-transform:uppercase}
+  .rail .spacer{flex:1}
+  .stamp{font-size:12px;color:#C9BEB0;text-align:right;line-height:1.3}
+  .stamp b{color:#F3ECE2;font-weight:600}
+  .btn{font-family:'Inter';font-size:12.5px;font-weight:600;border:1px solid #4a3d31;background:#3a2f26;color:#F3ECE2;border-radius:7px;padding:7px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{background:#473a2e}.btn.ghost{background:transparent}
+  .seg{display:inline-flex;border:1px solid #4a3d31;border-radius:8px;overflow:hidden}
+  .seg button{font-family:'Inter';font-size:12px;font-weight:600;background:#3a2f26;color:#C9BEB0;border:none;padding:7px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .seg button+button{border-left:1px solid #4a3d31}
+  .seg button.on{background:var(--amber);color:#2A211B}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:20px}
+
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+  .dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.crit{background:var(--crit)}
+  .track{display:flex;height:7px;border-radius:5px;overflow:hidden;background:var(--line);min-width:64px}
+  .track i{height:100%;display:block}
+  .track i.ok{background:var(--ok)}.track i.warn{background:var(--warn)}.track i.crit{background:var(--crit)}
+
+  .scope{display:flex;flex-direction:column;gap:9px;margin-bottom:16px;align-items:flex-start}
+  .scope-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .scope-row .k{font-family:'Archivo Narrow';font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);width:64px;flex:none}
+  .chip{font-family:'Archivo Narrow';font-weight:700;font-size:14px;letter-spacing:.02em;padding:6px 14px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+  .chip.sm{font-size:13px;padding:5px 12px}
+  .chip:hover{border-color:var(--chestnut)}
+  .chip.active{background:var(--espresso);color:#F3ECE2;border-color:var(--espresso)}
+  .chip.static{cursor:default;background:transparent;border-style:dashed;color:var(--muted)}
+  .chip.static:hover{border-color:var(--line)}
+
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 17px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .kpi .lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .kpi .val{font-family:'Archivo Narrow';font-weight:700;font-size:40px;line-height:1;margin-top:7px}
+  .kpi .foot{font-size:12px;color:var(--muted);margin-top:5px;min-height:15px}
+  .kpi.accent .val{color:var(--chestnut)}
+  .kpi.alert::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--crit)}
+  .kpi.alert .val{color:var(--crit)}
+
+  .centros{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+  .cbox{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--chestnut);border-radius:10px;padding:13px 15px;cursor:pointer;box-shadow:var(--shadow)}
+  .cbox.on{border-left-color:var(--amber);background:#FCF6EC}
+  .cbox .ct{font-family:'Archivo Narrow';font-weight:700;font-size:15px;letter-spacing:.02em}
+  .cbox .cn{font-family:'Archivo Narrow';font-weight:700;font-size:30px;line-height:1;margin:5px 0 2px}
+  .cbox .cf{font-size:12px;color:var(--muted)}
+  .cbox .cf b{color:var(--crit)}
+
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .tab{font-family:'Archivo Narrow';font-weight:700;font-size:15px;padding:10px 15px;border:none;background:none;color:var(--muted);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1px}
+  .tab.active{color:var(--espresso);border-bottom-color:var(--chestnut)}
+  .panel{display:none}.panel.active{display:block}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .card .hd{padding:13px 17px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .card .hd h2{font-family:'Archivo Narrow';font-weight:700;font-size:16px;margin:0}
+  .card .hd .hint{font-size:12px;color:var(--muted)}
+
+  .grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:18px;align-items:start}
+
+  .chart-box{padding:14px 16px 6px;position:relative}
+  .legend{display:flex;gap:15px;padding:0 17px 13px;flex-wrap:wrap}
+  .legend .li{display:flex;align-items:center;gap:6px;font-size:12.5px}
+
+  table{width:100%;border-collapse:collapse}
+  th{font-family:'Archivo Narrow';font-weight:700;font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 13px;border-bottom:1px solid var(--line);background:#F6F2EA}
+  td{padding:10px 13px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  td.r,th.r{text-align:right}
+  .almz{font-family:'Archivo Narrow';font-weight:700;font-size:14px}
+  .ccode{font-family:'Archivo Narrow';font-weight:700;color:var(--chestnut)}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;font-family:'Archivo Narrow';font-weight:700;font-size:13px;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.crit{background:var(--crit-bg);color:var(--crit)}
+
+  .controls{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .controls input,.controls select{font-family:'Inter';font-size:13px;color:var(--ink);border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 11px}
+  .controls input[type=search]{min-width:220px}
+  .controls .grow{flex:1}
+
+  /* DESKTOP detail rows */
+  .trow{border-bottom:1px solid var(--line)}
+  .trow .head{display:grid;grid-template-columns:22px 104px 150px 92px 182px 1fr 54px;gap:11px;align-items:center;padding:11px 15px;cursor:pointer}
+  .trow .head>div{min-width:0}
+  .trow .head:hover,.trow.open .head{background:#F6F2EA}
+  .caret{color:var(--muted);transition:transform .18s;font-size:12px;text-align:center}
+  .trow.open .caret{transform:rotate(90deg)}
+  .cl{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;display:block;margin-bottom:1px}
+  .cv{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ent{font-family:'Archivo Narrow';font-weight:700;font-size:15px}
+  .trow .body{display:none;background:#FCFAF6;padding:2px 15px 13px 50px}
+  .trow.open .body{display:block}
+  .subt{width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .subt th{background:#F1EBE0;padding:7px 12px}
+  .subt td{padding:8px 12px}
+
+  /* MOBILE cards */
+  .mlist{padding:12px;display:flex;flex-direction:column;gap:10px}
+  .tcard{border:1px solid var(--line);border-radius:11px;background:#fff;overflow:hidden}
+  .tcard .tct{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;cursor:pointer}
+  .tcard.open .tct{border-bottom:1px solid var(--line);background:#F9F5EE}
+  .tcard .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .tcard .meta{display:flex;gap:14px;flex-wrap:wrap;padding:9px 14px;font-size:12.5px;color:var(--ink);background:#FCFAF6}
+  .tcard .meta b{font-family:'Archivo Narrow';font-weight:700}
+  .tcard .plist{display:none;padding:4px 14px 12px}
+  .tcard.open .plist{display:block}
+  .pline{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .pline:last-child{border-bottom:none}
+  .pline .pm{font-size:12.5px}.pline .pm b{font-family:'Archivo Narrow';font-weight:700;color:var(--chestnut)}
+  .pline .pq{font-family:'Archivo Narrow';font-weight:700;white-space:nowrap}
+
+  .acard{border:1px solid var(--line);border-radius:11px;background:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .acard .an{font-family:'Archivo Narrow';font-weight:700;font-size:15px}
+  .acard .as{font-size:12px;color:var(--muted);margin-top:2px}
+  .acard .big{font-family:'Archivo Narrow';font-weight:700;font-size:26px;text-align:right}
+  .acard .big span{font-size:11px;color:var(--muted);display:block;font-weight:600}
+
+  .state{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:42px 22px;text-align:center;box-shadow:var(--shadow)}
+  .state h3{font-family:'Archivo Narrow';font-weight:700;font-size:19px;margin:0 0 6px}
+  .state p{color:var(--muted);margin:4px 0 16px;font-size:13.5px}
+  .btn-primary{background:var(--chestnut);color:#fff;border:none;border-radius:9px;padding:11px 20px;font-weight:600;font-size:13.5px;cursor:pointer}
+  .btn-primary:hover{background:#663d20}
+  .spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--chestnut);border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 14px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .hidden{display:none!important}
+
+  body.force-mobile .grid2{grid-template-columns:1fr}
+  body.force-mobile .kpis{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:720px){
+    .wrap{padding:14px}
+    .kpis{grid-template-columns:repeat(2,1fr);gap:10px}
+    .kpi .val{font-size:34px}
+    .grid2{grid-template-columns:1fr;gap:14px}
+    .rail{padding:11px 14px}
+    .stamp{order:5;flex-basis:100%;text-align:left}
+    .controls input[type=search]{min-width:0;flex:1}
+    .card .hd{padding:12px 14px}
+  }
+
+  /* --- mobile hardening --- */
+  html,body{overflow-x:hidden;-webkit-text-size-adjust:100%}
+  body{-webkit-tap-highlight-color:transparent}
+  #app,.wrap{max-width:100%}
+  canvas{max-width:100%!important}
+  .chart-box{min-height:150px}
+  .scope-note{font-size:11.5px;color:var(--muted);margin-bottom:1px}
+  .tcard .tct>div:first-child,.pline .pm{min-width:0}
+  .tcard .sub,.tcard .meta span,.pline .pm,.acard .an,.acard .as{overflow-wrap:anywhere;word-break:break-word}
+  .chip{max-width:100%}
+</style>
+</head>
+<body>
+
+<header class="rail">
+  <div class="brand"><span class="mark">Castaño</span><span class="sub">Monitor de traslados en tránsito</span></div>
+  <div class="spacer"></div>
+  <div class="seg" id="viewSeg" title="Elige cómo se ve el reporte">
+    <button data-v="desktop">🖥 Escritorio</button>
+    <button data-v="mobile">📱 Celular</button>
+  </div>
+  <div class="stamp" id="stamp">Cargando…</div>
+  <button class="btn" id="btnRefresh" title="Relee el archivo publicado">↻ Actualizar</button>
+  <button class="btn ghost" id="btnLoad" title="Cargar archivo local (vista previa)">Cargar archivo</button>
+  <input type="file" id="file" accept=".xlsx,.xls" class="hidden">
+</header>
+
+<main class="wrap" id="app" style="display:none">
+  <div class="scope" id="scope"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="centros hidden" id="centros"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="resumen">Resumen</button>
+    <button class="tab" data-tab="detalle">Detalle de traslados</button>
+  </div>
+
+  <section class="panel active" id="panel-resumen">
+    <div class="grid2">
+      <div class="card">
+        <div class="hd"><h2>Traslados por almacén</h2><span class="hint">Por antigüedad</span></div>
+        <div class="chart-box"><canvas id="chart"></canvas></div>
+        <div class="legend">
+          <span class="li"><span class="dot ok"></span> Al día · 0–7 d</span>
+          <span class="li"><span class="dot warn"></span> Atención · 8–30 d</span>
+          <span class="li"><span class="dot crit"></span> Crítico · +30 d</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="hd"><h2>Detalle por almacén</h2></div>
+        <div id="almWrap"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-detalle">
+    <div class="card">
+      <div class="hd">
+        <h2>Traslados</h2><span class="hint">Toca para ver los materiales</span>
+        <div class="grow"></div>
+        <div class="controls">
+          <input type="search" id="q" placeholder="Buscar entrega, material, proveedor…">
+          <select id="sort">
+            <option value="dias">Más antiguos primero</option>
+            <option value="dias-asc">Más recientes primero</option>
+            <option value="alm">Por almacén</option>
+          </select>
+        </div>
+      </div>
+      <div id="rows"></div>
+    </div>
+  </section>
+</main>
+
+<main class="wrap" id="loader"><div class="state"><div class="spin"></div><h3>Leyendo traslados…</h3><p>Cargando el archivo publicado.</p></div></main>
+<main class="wrap hidden" id="empty"><div class="state"><h3>Aún no hay archivo publicado</h3><p>Publica <code>monitor_de_entregas.xlsx</code> junto a esta página, o carga uno para previsualizar.</p><button class="btn-primary" id="btnLoad2">Cargar archivo</button></div></main>
+
+<script>
+try{ if(window.ChartDataLabels) Chart.register(window.ChartDataLabels); }catch(e){}
+const NF = new Intl.NumberFormat('es-CL');
+const $ = s=>document.querySelector(s);
+const norm = s=>String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+const FILE='monitor_de_entregas.xlsx';
+let TRAS=[], CENTROS=[], ALMACENES=[], chart=null;
+
+const mq = window.matchMedia('(max-width:720px)');
+let manualMode=null;                 // null=auto, 'desktop', 'mobile'
+const effMobile = ()=> manualMode!==null ? manualMode==='mobile' : mq.matches;
+let IS_MOBILE = effMobile();
+mq.addEventListener('change', ()=>{ if(manualMode===null){ IS_MOBILE=effMobile(); if(TRAS.length) render(); } });
+
+const FIELDS={centro:['centro'],almacen:['almacen'],entrega:['entrega'],fecha:['entregasdea'],creado:['creadopor'],doc:['documentocompras'],posicion:['posicion'],material:['material'],denom:['denominposicion'],cantidad:['cantidadentrega'],unidad:['unmedidaventa'],proveedor:['proveedor'],nombreprov:['nombredelproveedor']};
+function buildGetter(row){const m={};const nk=Object.keys(row).map(k=>({k,n:norm(k)}));for(const[f,c]of Object.entries(FIELDS)){const h=nk.find(o=>c.includes(o.n));if(h)m[f]=h.k;}return(r,f)=>m[f]!==undefined?r[m[f]]:undefined;}
+function daysBetween(d){if(!(d instanceof Date)||isNaN(d))return null;const a=new Date();a.setHours(0,0,0,0);const b=new Date(d.getFullYear(),d.getMonth(),d.getDate());return Math.floor((a-b)/86400000);}
+const bucketOf=d=>d==null?'warn':d<=7?'ok':d<=30?'warn':'crit';
+const fmtDate=d=>(d instanceof Date&&!isNaN(d))?d.toLocaleDateString('es-CL',{day:'2-digit',month:'short',year:'2-digit'}):'—';
+
+function parse(wb){
+  const ws=wb.Sheets['Data']||wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
+  if(!rows.length)return[];
+  const get=buildGetter(rows[0]);const g=new Map();
+  for(const r of rows){
+    const ent=get(r,'entrega');if(ent==null)continue;
+    const centro=String(get(r,'centro')??'—').trim();
+    const alm=String(get(r,'almacen')??'—').trim();
+    const key=centro+'|'+alm+'|'+ent;
+    let fecha=get(r,'fecha');
+    if(typeof fecha==='number')fecha=new Date(Math.round((fecha-25569)*86400000));
+    if(typeof fecha==='string'){const p=new Date(fecha);fecha=isNaN(p)?null:p;}
+    if(!g.has(key))g.set(key,{entrega:String(ent),centro,almacen:alm,fecha:fecha||null,creado:String(get(r,'creado')??'—'),doc:get(r,'doc')!=null?String(get(r,'doc')):'—',proveedor:String(get(r,'nombreprov')??get(r,'proveedor')??'—'),lineas:[]});
+    const t=g.get(key);
+    if(fecha instanceof Date&&(!t.fecha||fecha<t.fecha))t.fecha=fecha;
+    t.lineas.push({pos:get(r,'posicion'),material:get(r,'material')!=null?String(get(r,'material')):'—',denom:String(get(r,'denom')??'—'),cantidad:Number(get(r,'cantidad'))||0,unidad:String(get(r,'unidad')??'')});
+  }
+  const out=[...g.values()];
+  out.forEach(t=>{t.dias=daysBetween(t.fecha);t.bucket=bucketOf(t.dias);t.lineas.sort((a,b)=>(a.pos||0)-(b.pos||0));});
+  return out;
+}
+
+const centrosAll=()=>[...new Set(TRAS.map(t=>t.centro))].sort();
+function toggle(arr,v){const i=arr.indexOf(v);if(i>=0)arr.splice(i,1);else arr.push(v);}
+const almScope=()=> CENTROS.length?CENTROS:centrosAll();
+const availAlmacenes=()=>[...new Set(TRAS.filter(t=>almScope().includes(t.centro)).map(t=>t.almacen))].sort();
+const showAlmRow=()=> centrosAll().length===1 || CENTROS.length>=1;
+const scoped=()=>{let d=TRAS; if(CENTROS.length)d=d.filter(t=>CENTROS.includes(t.centro)); if(ALMACENES.length)d=d.filter(t=>ALMACENES.includes(t.almacen)); return d;};
+
+function updateSeg(){document.querySelectorAll('#viewSeg button').forEach(b=>b.classList.toggle('on', (b.dataset.v==='mobile')===IS_MOBILE));document.body.classList.toggle('force-mobile', manualMode==='mobile');}
+
+function renderScope(){
+  const cs=centrosAll();const sb=$('#scope');const rows=['<div class="scope-note">Toca para filtrar · puedes elegir varios</div>'];
+  let r1='<div class="scope-row"><span class="k">Centro</span>';
+  if(cs.length>1){
+    r1+=`<button class="chip" data-c="__all" ${CENTROS.length===0?'data-on':''}>Todos</button>`;
+    r1+=cs.map(c=>`<button class="chip" data-c="${c}" ${CENTROS.includes(c)?'data-on':''}>${c}</button>`).join('');
+  }else r1+='<span class="chip static">'+(cs[0]||'—')+'</span>';
+  rows.push(r1+'</div>');
+  if(showAlmRow()){
+    const alms=availAlmacenes();
+    let r2='<div class="scope-row"><span class="k">Almacén</span>';
+    r2+=`<button class="chip sm" data-a="__all" ${ALMACENES.length===0?'data-on':''}>Todos</button>`;
+    r2+=alms.map(a=>`<button class="chip sm" data-a="${a}" ${ALMACENES.includes(a)?'data-on':''}>${a}</button>`).join('');
+    rows.push(r2+'</div>');
+  }
+  sb.innerHTML=rows.join('');
+  sb.querySelectorAll('[data-on]').forEach(x=>x.classList.add('active'));
+  sb.querySelectorAll('[data-c]').forEach(ch=>ch.onclick=()=>{const v=ch.dataset.c; if(v==='__all')CENTROS=[]; else toggle(CENTROS,v); const valid=availAlmacenes(); ALMACENES=ALMACENES.filter(a=>valid.includes(a)); render();});
+  sb.querySelectorAll('[data-a]').forEach(ch=>ch.onclick=()=>{const v=ch.dataset.a; if(v==='__all')ALMACENES=[]; else toggle(ALMACENES,v); render();});
+}
+
+function render(){
+  IS_MOBILE=effMobile(); updateSeg();
+  renderScope();
+  const cs=centrosAll();
+  const data=scoped();
+  const totalT=data.length, totalL=data.reduce((s,t)=>s+t.lineas.length,0);
+  const oldest=data.reduce((m,t)=>(t.dias!=null&&(!m||t.dias>m.dias))?t:m,null);
+  const crit=data.filter(t=>t.bucket==='crit').length;
+  const almCount=new Set(data.map(t=>t.centro+'|'+t.almacen)).size;
+
+  const scopeLbl = ALMACENES.length?(ALMACENES.length+' almac'+(ALMACENES.length>1?'enes':'\u00e9n')+' seleccionado'+(ALMACENES.length>1?'s':'')):CENTROS.length?(CENTROS.length+' centro'+(CENTROS.length>1?'s':'')+' seleccionado'+(CENTROS.length>1?'s':'')):cs.length+' centro'+(cs.length>1?'s':'');
+  $('#kpis').innerHTML=`
+    <div class="kpi accent"><div class="lbl">Traslados pendientes</div><div class="val num">${NF.format(totalT)}</div><div class="foot">${NF.format(totalL)} líneas en tránsito</div></div>
+    <div class="kpi"><div class="lbl">Almacenes</div><div class="val num">${NF.format(almCount)}</div><div class="foot">${scopeLbl}</div></div>
+    <div class="kpi ${crit?'alert':''}"><div class="lbl">Críticos (+30 d)</div><div class="val num">${NF.format(crit)}</div><div class="foot">${crit?'Requieren regularización':'Sin críticos'}</div></div>
+    <div class="kpi ${oldest&&oldest.dias>30?'alert':''}"><div class="lbl">Más antiguo</div><div class="val num">${oldest?NF.format(oldest.dias)+'<span style="font-size:15px"> d</span>':'—'}</div><div class="foot">${oldest?'Entrega '+oldest.entrega+' · '+oldest.centro+'·'+oldest.almacen:''}</div></div>`;
+
+  const cb=$('#centros');
+  if(cs.length>1){
+    cb.classList.remove('hidden');
+    cb.innerHTML=cs.map(c=>{const d=TRAS.filter(t=>t.centro===c);const cr=d.filter(t=>t.bucket==='crit').length;
+      return `<div class="cbox ${CENTROS.includes(c)?'on':''}" data-c="${c}"><div class="ct">Centro ${c}</div><div class="cn num">${NF.format(d.length)}</div><div class="cf">${NF.format(d.reduce((s,t)=>s+t.lineas.length,0))} líneas${cr?' · <b>'+cr+' críticos</b>':''}</div></div>`;
+    }).join('');
+    cb.querySelectorAll('.cbox').forEach(x=>x.onclick=()=>{toggle(CENTROS,x.dataset.c);const valid=availAlmacenes();ALMACENES=ALMACENES.filter(a=>valid.includes(a));render();});
+  }else cb.classList.add('hidden');
+
+  renderResumen(data);
+  renderRows();
+}
+
+function renderResumen(data){
+  const multi=new Set(data.map(t=>t.centro)).size>1;
+  const by={};
+  for(const t of data){const k=t.centro+'|'+t.almacen;const a=by[k]||(by[k]={centro:t.centro,alm:t.almacen,label:(multi?t.centro+'·':'')+t.almacen,tras:0,lin:0,max:0,ok:0,warn:0,crit:0});a.tras++;a.lin+=t.lineas.length;a.max=Math.max(a.max,t.dias||0);a[t.bucket]++;}
+  const arr=Object.values(by).sort((a,b)=> a.centro.localeCompare(b.centro)||b.tras-a.tras);
+
+  const w=$('#almWrap');
+  if(IS_MOBILE){
+    w.className='mlist';
+    w.innerHTML=arr.map(a=>{const tot=a.ok+a.warn+a.crit;const seg=x=>tot?`<i class="${x[0]}" style="width:${x[1]/tot*100}%"></i>`:'';
+      return `<div class="acard"><div><div class="an">${a.label}</div><div class="as">${NF.format(a.lin)} líneas · más antiguo ${a.max} d</div><div class="track" style="margin-top:7px;width:120px">${seg(['ok',a.ok])}${seg(['warn',a.warn])}${seg(['crit',a.crit])}</div></div><div class="big">${a.tras}<span>traslados</span></div></div>`;
+    }).join('');
+  }else{
+    w.className='';
+    w.innerHTML='<table><thead><tr><th>Centro</th><th>Almacén</th><th class="r">Trasl.</th><th class="r">Líneas</th><th class="r">Más ant.</th><th>Estado</th></tr></thead><tbody>'+
+      arr.map(a=>{const b=bucketOf(a.max);const lbl=b==='crit'?'Crítico':b==='warn'?'Atención':'Al día';
+        return `<tr><td><span class="ccode">${a.centro}</span></td><td><span class="almz">${a.alm}</span></td><td class="r num" style="font-weight:700">${NF.format(a.tras)}</td><td class="r num">${NF.format(a.lin)}</td><td class="r num">${a.max} d</td><td><span class="badge ${b}"><span class="dot ${b}"></span>${lbl}</span></td></tr>`;
+      }).join('')+'</tbody></table>';
+  }
+
+  const labels=arr.map(a=>a.label);
+  const mk=(l,d,c)=>({label:l,data:d,backgroundColor:c,borderRadius:4,maxBarThickness:IS_MOBILE?26:54});
+  const dsets=[mk('Al día',arr.map(a=>a.ok),'#2F8F5B'),mk('Atención',arr.map(a=>a.warn),'#D98A1F'),mk('Crítico',arr.map(a=>a.crit),'#C4432B')];
+  const cv=$('#chart');
+  cv.parentElement.style.height=(IS_MOBILE?Math.max(150,arr.length*46+30):260)+'px';
+  if(chart)chart.destroy();
+  chart=new Chart(cv,{type:'bar',data:{labels,datasets:dsets},options:{
+    indexAxis:IS_MOBILE?'y':'x',responsive:true,maintainAspectRatio:false,animation:IS_MOBILE?false:{duration:350},resizeDelay:120,
+    plugins:{legend:{display:false},datalabels:{color:'#fff',font:{family:'Archivo Narrow',weight:700,size:13},formatter:v=>v>0?v:''},tooltip:{callbacks:{footer:it=>'Total: '+it.reduce((s,i)=>s+i.raw,0)+' traslados'}}},
+    scales:{x:{stacked:true,grid:{display:IS_MOBILE,color:'#E9E2D6'},beginAtZero:true,ticks:{precision:0,font:{family:IS_MOBILE?'Inter':'Archivo Narrow',size:IS_MOBILE?12:14,weight:700}}},
+      y:{stacked:true,grid:{color:'#E9E2D6',display:!IS_MOBILE},beginAtZero:true,ticks:{precision:0,font:{family:IS_MOBILE?'Archivo Narrow':'Inter',size:IS_MOBILE?13:12,weight:IS_MOBILE?700:400}}}}}});
+  requestAnimationFrame(()=>{if(chart)chart.resize();});
+}
+
+function currentList(){
+  const q=norm($('#q').value),sort=$('#sort').value;
+  let list=scoped().filter(t=>{if(!q)return true;return norm(t.entrega+' '+t.centro+' '+t.almacen+' '+t.creado+' '+t.doc+' '+t.proveedor+' '+t.lineas.map(l=>l.material+' '+l.denom).join(' ')).includes(q);});
+  if(sort==='dias')list.sort((a,b)=>(b.dias??-1)-(a.dias??-1));
+  else if(sort==='dias-asc')list.sort((a,b)=>(a.dias??1e9)-(b.dias??1e9));
+  else list.sort((a,b)=> a.centro.localeCompare(b.centro)||a.almacen.localeCompare(b.almacen)||(b.dias??0)-(a.dias??0));
+  return list;
+}
+
+function renderRows(){
+  const list=currentList();const box=$('#rows');
+  if(!list.length){box.className='';box.innerHTML='<div style="padding:38px;text-align:center;color:var(--muted)">Sin traslados que coincidan.</div>';return;}
+  if(IS_MOBILE){
+    box.className='mlist';
+    box.innerHTML=list.map(t=>{const dias=t.dias==null?'—':t.dias+' d';
+      const pl=t.lineas.map(l=>`<div class="pline"><div class="pm"><b>${l.material}</b> · ${l.denom}<div style="color:var(--muted);font-size:11px">Pos. ${l.pos??''}</div></div><div class="pq">${NF.format(l.cantidad)} ${l.unidad}</div></div>`).join('');
+      return `<div class="tcard"><div class="tct"><div><span class="ent">${t.entrega}</span><div class="sub">${t.centro}·${t.almacen} · ${fmtDate(t.fecha)}</div></div><span class="badge ${t.bucket}"><span class="dot ${t.bucket}"></span>${dias}</span></div><div class="meta"><span><b>${t.lineas.length}</b> líneas</span><span>Doc ${t.doc}</span><span>${t.creado}</span><span>${t.proveedor}</span></div><div class="plist">${pl}</div></div>`;
+    }).join('');
+    box.querySelectorAll('.tcard .tct').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
+  }else{
+    box.className='';
+    box.innerHTML=list.map(t=>{const dias=t.dias==null?'—':t.dias+' d';
+      const sub=t.lineas.map(l=>`<tr><td class="num">${l.pos??''}</td><td class="num">${l.material}</td><td>${l.denom}</td><td class="r num" style="font-weight:600">${NF.format(l.cantidad)}</td><td>${l.unidad}</td></tr>`).join('');
+      return `<div class="trow"><div class="head"><div class="caret">▶</div><div><span class="cl">Entrega</span><span class="ent">${t.entrega}</span></div><div><span class="cl">Centro · almacén</span><span class="cv"><span class="ccode">${t.centro}</span> · <b>${t.almacen}</b></span></div><div><span class="cl">Antigüedad</span><span class="badge ${t.bucket}"><span class="dot ${t.bucket}"></span>${dias}</span></div><div><span class="cl">Doc / creó</span><span class="cv">${t.doc} · ${t.creado}</span></div><div><span class="cl">Proveedor</span><span class="cv">${t.proveedor}</span></div><div style="text-align:right"><span class="cl">Líneas</span><span class="cv num" style="font-weight:700">${t.lineas.length}</span></div></div><div class="body"><table class="subt"><thead><tr><th>Pos.</th><th>Material</th><th>Denominación</th><th class="r">Cantidad</th><th>Un.</th></tr></thead><tbody>${sub}</tbody></table></div></div>`;
+    }).join('');
+    box.querySelectorAll('.trow .head').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
+  }
+}
+
+function show(v){$('#loader').classList.toggle('hidden',v!=='loader');$('#empty').classList.toggle('hidden',v!=='empty');$('#app').style.display=v==='app'?'block':'none';}
+function stamp(d,src){const x=d||new Date();$('#stamp').innerHTML=`<b>Datos al ${x.toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'})}</b>`+(src==='local'?' · archivo local':` · ${x.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})}`);}
+function ingest(buf,when,src){try{const wb=XLSX.read(buf,{type:'array',cellDates:true});TRAS=parse(wb);if(!TRAS.length){show('empty');return;}CENTROS=[];ALMACENES=[];stamp(when,src);show('app');render();}catch(e){console.error(e);show('empty');}}
+async function loadPublished(){show('loader');try{const res=await fetch(FILE+'?v='+Date.now(),{cache:'no-store'});if(!res.ok)throw 0;const lm=res.headers.get('last-modified');ingest(await res.arrayBuffer(),lm?new Date(lm):new Date(),'remote');}catch(e){show('empty');}}
+function pickFile(f){if(!f)return;const r=new FileReader();r.onload=e=>ingest(e.target.result,new Date(f.lastModified),'local');r.readAsArrayBuffer(f);}
+
+document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{manualMode=b.dataset.v;IS_MOBILE=effMobile();if(TRAS.length)render();else updateSeg();});
+$('#btnRefresh').onclick=loadPublished;
+$('#btnLoad').onclick=()=>$('#file').click();
+$('#btnLoad2').onclick=()=>$('#file').click();
+$('#file').onchange=e=>pickFile(e.target.files[0]);
+$('#q').oninput=renderRows;$('#sort').onchange=renderRows;
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen'&&chart)requestAnimationFrame(()=>chart.resize());});
+updateSeg();
+loadPublished();
+</script>
+</body>
+</html>
