@@ -105,7 +105,7 @@
 
   /* DESKTOP detail rows */
   .trow{border-bottom:1px solid var(--line)}
-  .trow .head{display:grid;grid-template-columns:22px 104px 150px 92px 182px 1fr 54px;gap:11px;align-items:center;padding:11px 15px;cursor:pointer}
+  .trow .head{display:grid;grid-template-columns:22px 100px 138px 92px 86px 148px 1fr 52px;gap:11px;align-items:center;padding:11px 15px;cursor:pointer}
   .trow .head>div{min-width:0}
   .trow .head:hover,.trow.open .head{background:#F6F2EA}
   .caret{color:var(--muted);transition:transform .18s;font-size:12px;text-align:center}
@@ -184,9 +184,6 @@
     <button data-v="mobile">📱 Celular</button>
   </div>
   <div class="stamp" id="stamp">Cargando…</div>
-  <button class="btn" id="btnRefresh" title="Relee el archivo publicado">↻ Actualizar</button>
-  <button class="btn ghost" id="btnLoad" title="Cargar archivo local (vista previa)">Cargar archivo</button>
-  <input type="file" id="file" accept=".xlsx,.xls" class="hidden">
 </header>
 
 <main class="wrap" id="app" style="display:none">
@@ -205,9 +202,8 @@
         <div class="hd"><h2>Traslados por almacén</h2><span class="hint">Por antigüedad</span></div>
         <div class="chart-box"><canvas id="chart"></canvas></div>
         <div class="legend">
-          <span class="li"><span class="dot ok"></span> Al día · 0–7 d</span>
-          <span class="li"><span class="dot warn"></span> Atención · 8–30 d</span>
-          <span class="li"><span class="dot crit"></span> Crítico · +30 d</span>
+          <span class="li"><span class="dot ok"></span> Al día · mismo día (0 d)</span>
+          <span class="li"><span class="dot crit"></span> Crítico · +1 día sin regularizar</span>
         </div>
       </div>
       <div class="card">
@@ -237,7 +233,7 @@
 </main>
 
 <main class="wrap" id="loader"><div class="state"><div class="spin"></div><h3>Leyendo traslados…</h3><p>Cargando el archivo publicado.</p></div></main>
-<main class="wrap hidden" id="empty"><div class="state"><h3>Aún no hay archivo publicado</h3><p>Publica <code>monitor_de_entregas.xlsx</code> junto a esta página, o carga uno para previsualizar.</p><button class="btn-primary" id="btnLoad2">Cargar archivo</button></div></main>
+<main class="wrap hidden" id="empty"><div class="state"><h3>Aún no hay archivo publicado</h3><p>El reporte se genera al publicar <code>monitor_de_entregas.xlsx</code>. Si ves este mensaje, vuelve a ejecutar el script de subida o revisa el repositorio.</p></div></main>
 
 <script>
 try{ if(window.ChartDataLabels) Chart.register(window.ChartDataLabels); }catch(e){}
@@ -256,7 +252,7 @@ mq.addEventListener('change', ()=>{ if(manualMode===null){ IS_MOBILE=effMobile()
 const FIELDS={centro:['centro'],almacen:['almacen'],entrega:['entrega'],fecha:['entregasdea'],creado:['creadopor'],doc:['documentocompras'],posicion:['posicion'],material:['material'],denom:['denominposicion'],cantidad:['cantidadentrega'],unidad:['unmedidaventa'],proveedor:['proveedor'],nombreprov:['nombredelproveedor']};
 function buildGetter(row){const m={};const nk=Object.keys(row).map(k=>({k,n:norm(k)}));for(const[f,c]of Object.entries(FIELDS)){const h=nk.find(o=>c.includes(o.n));if(h)m[f]=h.k;}return(r,f)=>m[f]!==undefined?r[m[f]]:undefined;}
 function daysBetween(d){if(!(d instanceof Date)||isNaN(d))return null;const a=new Date();a.setHours(0,0,0,0);const b=new Date(d.getFullYear(),d.getMonth(),d.getDate());return Math.floor((a-b)/86400000);}
-const bucketOf=d=>d==null?'warn':d<=7?'ok':d<=30?'warn':'crit';
+const bucketOf=d=>d==null?'crit':d<=0?'ok':'crit';
 const fmtDate=d=>(d instanceof Date&&!isNaN(d))?d.toLocaleDateString('es-CL',{day:'2-digit',month:'short',year:'2-digit'}):'—';
 
 function parse(wb){
@@ -326,8 +322,8 @@ function render(){
   $('#kpis').innerHTML=`
     <div class="kpi accent"><div class="lbl">Traslados pendientes</div><div class="val num">${NF.format(totalT)}</div><div class="foot">${NF.format(totalL)} líneas en tránsito</div></div>
     <div class="kpi"><div class="lbl">Almacenes</div><div class="val num">${NF.format(almCount)}</div><div class="foot">${scopeLbl}</div></div>
-    <div class="kpi ${crit?'alert':''}"><div class="lbl">Críticos (+30 d)</div><div class="val num">${NF.format(crit)}</div><div class="foot">${crit?'Requieren regularización':'Sin críticos'}</div></div>
-    <div class="kpi ${oldest&&oldest.dias>30?'alert':''}"><div class="lbl">Más antiguo</div><div class="val num">${oldest?NF.format(oldest.dias)+'<span style="font-size:15px"> d</span>':'—'}</div><div class="foot">${oldest?'Entrega '+oldest.entrega+' · '+oldest.centro+'·'+oldest.almacen:''}</div></div>`;
+    <div class="kpi ${crit?'alert':''}"><div class="lbl">Críticos (+1 día)</div><div class="val num">${NF.format(crit)}</div><div class="foot">${crit?'Requieren regularización':'Sin críticos'}</div></div>
+    <div class="kpi ${oldest&&oldest.dias>0?'alert':''}"><div class="lbl">Más antiguo</div><div class="val num">${oldest?NF.format(oldest.dias)+'<span style="font-size:15px"> d</span>':'—'}</div><div class="foot">${oldest?'Entrega '+oldest.entrega+' · '+oldest.centro+'·'+oldest.almacen:''}</div></div>`;
 
   const cb=$('#centros');
   if(cs.length>1){
@@ -364,7 +360,7 @@ function renderResumen(data){
 
   const labels=arr.map(a=>a.label);
   const mk=(l,d,c)=>({label:l,data:d,backgroundColor:c,borderRadius:4,maxBarThickness:IS_MOBILE?26:54});
-  const dsets=[mk('Al día',arr.map(a=>a.ok),'#2F8F5B'),mk('Atención',arr.map(a=>a.warn),'#D98A1F'),mk('Crítico',arr.map(a=>a.crit),'#C4432B')];
+  const dsets=[mk('Al día',arr.map(a=>a.ok),'#2F8F5B'),mk('Crítico',arr.map(a=>a.crit),'#C4432B')];
   const cv=$('#chart');
   cv.parentElement.style.height=(IS_MOBILE?Math.max(150,arr.length*46+30):260)+'px';
   if(chart)chart.destroy();
@@ -399,7 +395,7 @@ function renderRows(){
     box.className='';
     box.innerHTML=list.map(t=>{const dias=t.dias==null?'—':t.dias+' d';
       const sub=t.lineas.map(l=>`<tr><td class="num">${l.pos??''}</td><td class="num">${l.material}</td><td>${l.denom}</td><td class="r num" style="font-weight:600">${NF.format(l.cantidad)}</td><td>${l.unidad}</td></tr>`).join('');
-      return `<div class="trow"><div class="head"><div class="caret">▶</div><div><span class="cl">Entrega</span><span class="ent">${t.entrega}</span></div><div><span class="cl">Centro · almacén</span><span class="cv"><span class="ccode">${t.centro}</span> · <b>${t.almacen}</b></span></div><div><span class="cl">Antigüedad</span><span class="badge ${t.bucket}"><span class="dot ${t.bucket}"></span>${dias}</span></div><div><span class="cl">Doc / creó</span><span class="cv">${t.doc} · ${t.creado}</span></div><div><span class="cl">Proveedor</span><span class="cv">${t.proveedor}</span></div><div style="text-align:right"><span class="cl">Líneas</span><span class="cv num" style="font-weight:700">${t.lineas.length}</span></div></div><div class="body"><table class="subt"><thead><tr><th>Pos.</th><th>Material</th><th>Denominación</th><th class="r">Cantidad</th><th>Un.</th></tr></thead><tbody>${sub}</tbody></table></div></div>`;
+      return `<div class="trow"><div class="head"><div class="caret">▶</div><div><span class="cl">Entrega</span><span class="ent">${t.entrega}</span></div><div><span class="cl">Centro · almacén</span><span class="cv"><span class="ccode">${t.centro}</span> · <b>${t.almacen}</b></span></div><div><span class="cl">Fecha</span><span class="cv">${fmtDate(t.fecha)}</span></div><div><span class="cl">Antigüedad</span><span class="badge ${t.bucket}"><span class="dot ${t.bucket}"></span>${dias}</span></div><div><span class="cl">Doc / creó</span><span class="cv">${t.doc} · ${t.creado}</span></div><div><span class="cl">Proveedor</span><span class="cv">${t.proveedor}</span></div><div style="text-align:right"><span class="cl">Líneas</span><span class="cv num" style="font-weight:700">${t.lineas.length}</span></div></div><div class="body"><table class="subt"><thead><tr><th>Pos.</th><th>Material</th><th>Denominación</th><th class="r">Cantidad</th><th>Un.</th></tr></thead><tbody>${sub}</tbody></table></div></div>`;
     }).join('');
     box.querySelectorAll('.trow .head').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
   }
@@ -412,10 +408,6 @@ async function loadPublished(){show('loader');try{const res=await fetch(FILE+'?v
 function pickFile(f){if(!f)return;const r=new FileReader();r.onload=e=>ingest(e.target.result,new Date(f.lastModified),'local');r.readAsArrayBuffer(f);}
 
 document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{manualMode=b.dataset.v;IS_MOBILE=effMobile();if(TRAS.length)render();else updateSeg();});
-$('#btnRefresh').onclick=loadPublished;
-$('#btnLoad').onclick=()=>$('#file').click();
-$('#btnLoad2').onclick=()=>$('#file').click();
-$('#file').onchange=e=>pickFile(e.target.files[0]);
 $('#q').oninput=renderRows;$('#sort').onchange=renderRows;
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen'&&chart)requestAnimationFrame(()=>chart.resize());});
 updateSeg();
