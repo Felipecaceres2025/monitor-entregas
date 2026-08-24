@@ -220,7 +220,7 @@
       </div>
     </div>
       <div class="card" style="margin-top:18px">
-        <div class="hd"><h2>Evolución de traslados pendientes</h2><span class="hint">Total por día · la meta es que baje</span></div>
+        <div class="hd"><h2>Evolución de traslados pendientes</h2><span class="hint">Un punto por día · respeta el filtro de arriba</span></div>
         <div id="histCap" class="histcap"></div>
         <div class="chart-box"><canvas id="chartHist"></canvas></div>
       </div>
@@ -353,7 +353,7 @@ function render(){
 }
 
 function fmtDia(iso){const q=String(iso).split('-');return q.length===3?q[2]+'/'+q[1]:iso;}
-function parseHistCSV(txt){const out=[];const L=String(txt).trim().split(/\r?\n/);for(let i=1;i<L.length;i++){const c=L[i].split(',');if(c[0])out.push({fecha:c[0].trim(),pend:+(c[1]||0),lin:+(c[2]||0)});}return out.sort((a,b)=>a.fecha.localeCompare(b.fecha));}
+function parseHistCSV(txt){const L=String(txt).trim().split(/\r?\n/);if(L.length<2)return[];const H=L[0].split(',').map(x=>x.trim().toLowerCase());const iF=H.indexOf('fecha'),iC=H.indexOf('centro'),iA=H.indexOf('almacen'),iP=H.indexOf('pendientes'),iL=H.indexOf('lineas');const out=[];for(let i=1;i<L.length;i++){const c=L[i].split(',');if(iF<0||!c[iF])continue;out.push({fecha:c[iF].trim(),centro:iC>=0?String(c[iC]||'').trim():'',almacen:iA>=0?String(c[iA]||'').trim():'',pend:+(c[iP]||0),lin:+(c[iL]||0)});}return out;}
 async function loadHistorico(){try{const r=await fetch('historico.csv?v='+Date.now(),{cache:'no-store'});if(!r.ok)throw 0;HIST=parseHistCSV(await r.text());}catch(e){HIST=[];}renderHist();}
 function renderHist(){
   const cap=$('#histCap');const cv=$('#chartHist');if(!cv)return;
@@ -363,14 +363,27 @@ function renderHist(){
     cap.innerHTML='<span class="hempty">Aún no hay historial. Se irá construyendo con cada día que subas el archivo; mañana verás el primer tramo de la curva.</span>';
     return;
   }
-  const last=HIST[HIST.length-1], prev=HIST.length>1?HIST[HIST.length-2]:null;
+  const segmentable=HIST.some(r=>r.centro!=='');
+  let rows=HIST;
+  if(segmentable){rows=HIST.filter(r=>{if(CENTROS.length&&!CENTROS.includes(r.centro))return false;if(ALMACENES.length&&!ALMACENES.includes(r.almacen))return false;return true;});}
+  const byF={};for(const r of rows){byF[r.fecha]=(byF[r.fecha]||0)+r.pend;}
+  const fechas=Object.keys(byF).sort();
+  if(!fechas.length){
+    if(chartHist){chartHist.destroy();chartHist=null;}
+    cv.parentElement.style.height='';
+    cap.innerHTML='<span class="hempty">Sin datos para el filtro seleccionado.</span>';
+    return;
+  }
+  const serie=fechas.map(f=>byF[f]);
+  const lastN=serie[serie.length-1], prevN=serie.length>1?serie[serie.length-2]:null;
   let deltaHTML='';
-  if(prev){const d=last.pend-prev.pend;const cls=d<0?'down':d>0?'up':'flat';const arw=d<0?'▼':d>0?'▲':'=';deltaHTML=`<span class="delta ${cls}">${arw} ${Math.abs(d)} vs. día anterior</span>`;}
-  cap.innerHTML=`<span class="hnow">Hoy: <b class="num">${NF.format(last.pend)}</b> pendientes</span>${deltaHTML}`;
-  const labels=HIST.map(h=>fmtDia(h.fecha));const data=HIST.map(h=>h.pend);
+  if(prevN!==null){const d=lastN-prevN;const cls=d<0?'down':d>0?'up':'flat';const arw=d<0?'▼':d>0?'▲':'=';deltaHTML=`<span class="delta ${cls}">${arw} ${Math.abs(d)} vs. día anterior</span>`;}
+  const alcance=(CENTROS.length||ALMACENES.length)?' <span style="color:var(--muted);font-weight:400;font-size:12px">(filtrado)</span>':'';
+  cap.innerHTML=`<span class="hnow">Hoy: <b class="num">${NF.format(lastN)}</b> pendientes${alcance}</span>${deltaHTML}`;
+  const labels=fechas.map(fmtDia);
   cv.parentElement.style.height=(IS_MOBILE?210:260)+'px';
   if(chartHist)chartHist.destroy();
-  chartHist=new Chart(cv,{type:'line',data:{labels,datasets:[{label:'Pendientes',data,borderColor:'#7A4A28',backgroundColor:'rgba(122,74,40,.12)',fill:true,tension:.25,borderWidth:2,pointRadius:3,pointBackgroundColor:'#7A4A28',pointHoverRadius:5}]},options:{
+  chartHist=new Chart(cv,{type:'line',data:{labels,datasets:[{label:'Pendientes',data:serie,borderColor:'#7A4A28',backgroundColor:'rgba(122,74,40,.12)',fill:true,tension:.25,borderWidth:2,pointRadius:3,pointBackgroundColor:'#7A4A28',pointHoverRadius:5}]},options:{
     responsive:true,maintainAspectRatio:false,animation:IS_MOBILE?false:{duration:350},
     plugins:{legend:{display:false},datalabels:{display:labels.length<=14,align:'top',offset:2,color:'#7A4A28',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{title:it=>'Fecha '+it[0].label,label:it=>NF.format(it.raw)+' pendientes'}}},
     scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},maxRotation:0,autoSkip:true}},y:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter'}}}}}});
