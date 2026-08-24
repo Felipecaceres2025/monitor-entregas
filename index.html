@@ -172,6 +172,14 @@
   .tcard .tct>div:first-child,.pline .pm{min-width:0}
   .tcard .sub,.tcard .meta span,.pline .pm,.acard .an,.acard .as{overflow-wrap:anywhere;word-break:break-word}
   .chip{max-width:100%}
+  .histcap{padding:12px 17px 0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .histcap .hnow{font-family:'Archivo Narrow';font-weight:700;font-size:15px}
+  .histcap .hnow b{font-size:22px}
+  .histcap .delta{font-family:'Archivo Narrow';font-weight:700;font-size:13px;padding:2px 9px;border-radius:20px}
+  .histcap .delta.down{background:var(--ok-bg);color:var(--ok)}
+  .histcap .delta.up{background:var(--crit-bg);color:var(--crit)}
+  .histcap .delta.flat{background:#efeae1;color:var(--muted)}
+  .histcap .hempty{color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
@@ -211,6 +219,11 @@
         <div id="almWrap"></div>
       </div>
     </div>
+      <div class="card" style="margin-top:18px">
+        <div class="hd"><h2>Evolución de traslados pendientes</h2><span class="hint">Total por día · la meta es que baje</span></div>
+        <div id="histCap" class="histcap"></div>
+        <div class="chart-box"><canvas id="chartHist"></canvas></div>
+      </div>
   </section>
 
   <section class="panel" id="panel-detalle">
@@ -241,7 +254,7 @@ const NF = new Intl.NumberFormat('es-CL');
 const $ = s=>document.querySelector(s);
 const norm = s=>String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 const FILE='monitor_de_entregas.xlsx';
-let TRAS=[], CENTROS=[], ALMACENES=[], chart=null;
+let TRAS=[], CENTROS=[], ALMACENES=[], chart=null, HIST=null, chartHist=null;
 
 const mq = window.matchMedia('(max-width:720px)');
 let manualMode=null;                 // null=auto, 'desktop', 'mobile'
@@ -336,6 +349,32 @@ function render(){
 
   renderResumen(data);
   renderRows();
+  renderHist();
+}
+
+function fmtDia(iso){const q=String(iso).split('-');return q.length===3?q[2]+'/'+q[1]:iso;}
+function parseHistCSV(txt){const out=[];const L=String(txt).trim().split(/\r?\n/);for(let i=1;i<L.length;i++){const c=L[i].split(',');if(c[0])out.push({fecha:c[0].trim(),pend:+(c[1]||0),lin:+(c[2]||0)});}return out.sort((a,b)=>a.fecha.localeCompare(b.fecha));}
+async function loadHistorico(){try{const r=await fetch('historico.csv?v='+Date.now(),{cache:'no-store'});if(!r.ok)throw 0;HIST=parseHistCSV(await r.text());}catch(e){HIST=[];}renderHist();}
+function renderHist(){
+  const cap=$('#histCap');const cv=$('#chartHist');if(!cv)return;
+  if(!HIST||!HIST.length){
+    if(chartHist){chartHist.destroy();chartHist=null;}
+    cv.parentElement.style.height='';
+    cap.innerHTML='<span class="hempty">Aún no hay historial. Se irá construyendo con cada día que subas el archivo; mañana verás el primer tramo de la curva.</span>';
+    return;
+  }
+  const last=HIST[HIST.length-1], prev=HIST.length>1?HIST[HIST.length-2]:null;
+  let deltaHTML='';
+  if(prev){const d=last.pend-prev.pend;const cls=d<0?'down':d>0?'up':'flat';const arw=d<0?'▼':d>0?'▲':'=';deltaHTML=`<span class="delta ${cls}">${arw} ${Math.abs(d)} vs. día anterior</span>`;}
+  cap.innerHTML=`<span class="hnow">Hoy: <b class="num">${NF.format(last.pend)}</b> pendientes</span>${deltaHTML}`;
+  const labels=HIST.map(h=>fmtDia(h.fecha));const data=HIST.map(h=>h.pend);
+  cv.parentElement.style.height=(IS_MOBILE?210:260)+'px';
+  if(chartHist)chartHist.destroy();
+  chartHist=new Chart(cv,{type:'line',data:{labels,datasets:[{label:'Pendientes',data,borderColor:'#7A4A28',backgroundColor:'rgba(122,74,40,.12)',fill:true,tension:.25,borderWidth:2,pointRadius:3,pointBackgroundColor:'#7A4A28',pointHoverRadius:5}]},options:{
+    responsive:true,maintainAspectRatio:false,animation:IS_MOBILE?false:{duration:350},
+    plugins:{legend:{display:false},datalabels:{display:labels.length<=14,align:'top',offset:2,color:'#7A4A28',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{title:it=>'Fecha '+it[0].label,label:it=>NF.format(it.raw)+' pendientes'}}},
+    scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},maxRotation:0,autoSkip:true}},y:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter'}}}}}});
+  requestAnimationFrame(()=>{if(chartHist)chartHist.resize();});
 }
 
 function renderResumen(data){
@@ -403,13 +442,13 @@ function renderRows(){
 
 function show(v){$('#loader').classList.toggle('hidden',v!=='loader');$('#empty').classList.toggle('hidden',v!=='empty');$('#app').style.display=v==='app'?'block':'none';}
 function stamp(d,src){const x=d||new Date();$('#stamp').innerHTML=`<b>Datos al ${x.toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'})}</b>`+(src==='local'?' · archivo local':` · ${x.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})}`);}
-function ingest(buf,when,src){try{const wb=XLSX.read(buf,{type:'array',cellDates:true});TRAS=parse(wb);if(!TRAS.length){show('empty');return;}CENTROS=[];ALMACENES=[];stamp(when,src);show('app');render();}catch(e){console.error(e);show('empty');}}
+function ingest(buf,when,src){try{const wb=XLSX.read(buf,{type:'array',cellDates:true});TRAS=parse(wb);if(!TRAS.length){show('empty');return;}CENTROS=[];ALMACENES=[];stamp(when,src);show('app');render();loadHistorico();}catch(e){console.error(e);show('empty');}}
 async function loadPublished(){show('loader');try{const res=await fetch(FILE+'?v='+Date.now(),{cache:'no-store'});if(!res.ok)throw 0;const lm=res.headers.get('last-modified');ingest(await res.arrayBuffer(),lm?new Date(lm):new Date(),'remote');}catch(e){show('empty');}}
 function pickFile(f){if(!f)return;const r=new FileReader();r.onload=e=>ingest(e.target.result,new Date(f.lastModified),'local');r.readAsArrayBuffer(f);}
 
 document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{manualMode=b.dataset.v;IS_MOBILE=effMobile();if(TRAS.length)render();else updateSeg();});
 $('#q').oninput=renderRows;$('#sort').onchange=renderRows;
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen'&&chart)requestAnimationFrame(()=>chart.resize());});
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen')requestAnimationFrame(()=>{if(chart)chart.resize();if(chartHist)chartHist.resize();});});
 updateSeg();
 loadPublished();
 </script>
