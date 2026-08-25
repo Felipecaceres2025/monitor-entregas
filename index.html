@@ -224,6 +224,11 @@
         <div id="histCap" class="histcap"></div>
         <div class="chart-box"><canvas id="chartHist"></canvas></div>
       </div>
+      <div class="card" style="margin-top:18px">
+        <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">De qué fechas viene el atraso · respeta el filtro</span></div>
+        <div id="origCap" class="histcap"></div>
+        <div class="chart-box"><canvas id="chartOrigen"></canvas></div>
+      </div>
   </section>
 
   <section class="panel" id="panel-detalle">
@@ -254,7 +259,7 @@ const NF = new Intl.NumberFormat('es-CL');
 const $ = s=>document.querySelector(s);
 const norm = s=>String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 const FILE='monitor_de_entregas.xlsx';
-let TRAS=[], CENTROS=[], ALMACENES=[], chart=null, HIST=null, chartHist=null;
+let TRAS=[], CENTROS=[], ALMACENES=[], chart=null, HIST=null, chartHist=null, chartOrigen=null;
 
 const mq = window.matchMedia('(max-width:720px)');
 let manualMode=null;                 // null=auto, 'desktop', 'mobile'
@@ -350,6 +355,7 @@ function render(){
   renderResumen(data);
   renderRows();
   renderHist();
+  renderOrigen();
 }
 
 function fmtDia(iso){const q=String(iso).split('-');return q.length===3?q[2]+'/'+q[1]:iso;}
@@ -388,6 +394,34 @@ function renderHist(){
     plugins:{legend:{display:false},datalabels:{display:labels.length<=14,align:'top',offset:2,color:'#7A4A28',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{title:it=>'Fecha '+it[0].label,label:it=>NF.format(it.raw)+' pendientes'}}},
     scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},maxRotation:0,autoSkip:true}},y:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter'}}}}}});
   requestAnimationFrame(()=>{if(chartHist)chartHist.resize();});
+}
+
+function isoLocal(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function renderOrigen(){
+  const cap=$('#origCap');const cv=$('#chartOrigen');if(!cv)return;
+  const data=scoped();
+  const by={};
+  for(const t of data){
+    const key=(t.fecha instanceof Date && !isNaN(t.fecha))?isoLocal(t.fecha):'sinfecha';
+    const g=by[key]||(by[key]={count:0,bucket:t.bucket,label:key==='sinfecha'?'Sin fecha':fmtDia(key)});
+    g.count++;
+  }
+  const keys=Object.keys(by).sort((a,b)=> a==='sinfecha'?1:b==='sinfecha'?-1:a.localeCompare(b));
+  if(!keys.length){if(chartOrigen){chartOrigen.destroy();chartOrigen=null;}cv.parentElement.style.height='';cap.innerHTML='<span class="hempty">Sin datos para el filtro seleccionado.</span>';return;}
+  const labels=keys.map(k=>by[k].label);
+  const vals=keys.map(k=>by[k].count);
+  const colors=keys.map(k=>by[k].bucket==='crit'?'#C4432B':'#2F8F5B');
+  const total=vals.reduce((s,v)=>s+v,0);
+  const nf=keys.filter(k=>k!=='sinfecha').length;
+  const alcance=(CENTROS.length||ALMACENES.length)?' <span style="color:var(--muted);font-weight:400;font-size:12px">(filtrado)</span>':'';
+  cap.innerHTML=`<span class="hnow"><b class="num">${NF.format(total)}</b> traslados pendientes${alcance}</span><span class="delta flat">${nf} fecha${nf===1?'':'s'} de creación</span>`;
+  cv.parentElement.style.height=(IS_MOBILE?220:260)+'px';
+  if(chartOrigen)chartOrigen.destroy();
+  chartOrigen=new Chart(cv,{type:'bar',data:{labels,datasets:[{label:'Pendientes',data:vals,backgroundColor:colors,borderRadius:4,maxBarThickness:48}]},options:{
+    responsive:true,maintainAspectRatio:false,animation:IS_MOBILE?false:{duration:350},
+    plugins:{legend:{display:false},datalabels:{display:labels.length<=24,anchor:'end',align:'top',color:'#2A211B',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{title:it=>'Creado '+it[0].label,label:it=>NF.format(it.raw)+' pendientes'}}},
+    scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},maxRotation:0,autoSkip:true}},y:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter'}}}}}});
+  requestAnimationFrame(()=>{if(chartOrigen)chartOrigen.resize();});
 }
 
 function renderResumen(data){
@@ -461,7 +495,7 @@ function pickFile(f){if(!f)return;const r=new FileReader();r.onload=e=>ingest(e.
 
 document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{manualMode=b.dataset.v;IS_MOBILE=effMobile();if(TRAS.length)render();else updateSeg();});
 $('#q').oninput=renderRows;$('#sort').onchange=renderRows;
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen')requestAnimationFrame(()=>{if(chart)chart.resize();if(chartHist)chartHist.resize();});});
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen')requestAnimationFrame(()=>{if(chart)chart.resize();if(chartHist)chartHist.resize();if(chartOrigen)chartOrigen.resize();});});
 updateSeg();
 loadPublished();
 </script>
