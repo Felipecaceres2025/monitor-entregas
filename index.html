@@ -180,6 +180,11 @@
   .histcap .delta.up{background:var(--crit-bg);color:var(--crit)}
   .histcap .delta.flat{background:#efeae1;color:var(--muted)}
   .histcap .hempty{color:var(--muted);font-size:13px}
+  .daterange{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .daterange .k{font-family:'Archivo Narrow';font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .daterange input[type=date]{font-family:'Inter';font-size:13px;color:var(--ink);border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 10px}
+  .daterange .dash{color:var(--muted)}
+  .daterange .drhint{font-size:11.5px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -205,6 +210,14 @@
   </div>
 
   <section class="panel active" id="panel-resumen">
+    <div class="daterange" id="daterange">
+      <span class="k">Rango de fechas</span>
+      <input type="date" id="fDesde" aria-label="Desde">
+      <span class="dash">→</span>
+      <input type="date" id="fHasta" aria-label="Hasta">
+      <button class="chip sm" id="fClear">Todo</button>
+      <span class="drhint">Aplica a los gráficos de evolución y de fecha de creación</span>
+    </div>
     <div class="grid2">
       <div class="card">
         <div class="hd"><h2>Traslados por almacén</h2><span class="hint">Por antigüedad</span></div>
@@ -260,6 +273,8 @@ const $ = s=>document.querySelector(s);
 const norm = s=>String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 const FILE='monitor_de_entregas.xlsx';
 let TRAS=[], CENTROS=[], ALMACENES=[], chart=null, HIST=null, chartHist=null, chartOrigen=null;
+let FDESDE='', FHASTA='';
+const inRange=iso=>(!FDESDE||iso>=FDESDE)&&(!FHASTA||iso<=FHASTA);
 
 const mq = window.matchMedia('(max-width:720px)');
 let manualMode=null;                 // null=auto, 'desktop', 'mobile'
@@ -370,8 +385,8 @@ function renderHist(){
     return;
   }
   const segmentable=HIST.some(r=>r.centro!=='');
-  let rows=HIST;
-  if(segmentable){rows=HIST.filter(r=>{if(CENTROS.length&&!CENTROS.includes(r.centro))return false;if(ALMACENES.length&&!ALMACENES.includes(r.almacen))return false;return true;});}
+  let rows=HIST.filter(r=>inRange(r.fecha));
+  if(segmentable){rows=rows.filter(r=>{if(CENTROS.length&&!CENTROS.includes(r.centro))return false;if(ALMACENES.length&&!ALMACENES.includes(r.almacen))return false;return true;});}
   const byF={};for(const r of rows){byF[r.fecha]=(byF[r.fecha]||0)+r.pend;}
   const fechas=Object.keys(byF).sort();
   if(!fechas.length){
@@ -402,7 +417,9 @@ function renderOrigen(){
   const data=scoped();
   const by={};
   for(const t of data){
-    const key=(t.fecha instanceof Date && !isNaN(t.fecha))?isoLocal(t.fecha):'sinfecha';
+    const hasF=(t.fecha instanceof Date && !isNaN(t.fecha));
+    const key=hasF?isoLocal(t.fecha):'sinfecha';
+    if((FDESDE||FHASTA)&&(!hasF||!inRange(key)))continue;
     const g=by[key]||(by[key]={count:0,bucket:t.bucket,label:key==='sinfecha'?'Sin fecha':fmtDia(key)});
     g.count++;
   }
@@ -495,6 +512,9 @@ function pickFile(f){if(!f)return;const r=new FileReader();r.onload=e=>ingest(e.
 
 document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{manualMode=b.dataset.v;IS_MOBILE=effMobile();if(TRAS.length)render();else updateSeg();});
 $('#q').oninput=renderRows;$('#sort').onchange=renderRows;
+$('#fDesde').onchange=()=>{FDESDE=$('#fDesde').value;render();};
+$('#fHasta').onchange=()=>{FHASTA=$('#fHasta').value;render();};
+$('#fClear').onclick=()=>{FDESDE='';FHASTA='';$('#fDesde').value='';$('#fHasta').value='';render();};
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen')requestAnimationFrame(()=>{if(chart)chart.resize();if(chartHist)chartHist.resize();if(chartOrigen)chartOrigen.resize();});});
 updateSeg();
 loadPublished();
