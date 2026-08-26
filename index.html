@@ -248,7 +248,7 @@
       <div class="chart-box"><canvas id="chartHist"></canvas></div>
     </div>
     <div class="card" style="margin-top:18px">
-      <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">Por fecha de creación · de qué fechas viene el atraso actual</span></div>
+      <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">Por fecha de creación · pasa el mouse para ver los almacenes de cada fecha</span></div>
       <div id="origCap" class="histcap"></div>
       <div class="chart-box"><canvas id="chartOrigen"></canvas></div>
     </div>
@@ -434,11 +434,14 @@ function renderOrigen(){
     const hasF=(t.fecha instanceof Date && !isNaN(t.fecha));
     const key=hasF?isoLocal(t.fecha):'sinfecha';
     if((FDESDE||FHASTA)&&(!hasF||!inRange(key)))continue;
-    const g=by[key]||(by[key]={count:0,bucket:t.bucket,label:key==='sinfecha'?'Sin fecha':fmtDia(key)});
+    const g=by[key]||(by[key]={count:0,bucket:t.bucket,dias:(t.dias!=null?t.dias:null),alm:{},resp:{},label:key==='sinfecha'?'Sin fecha':fmtDia(key),full:hasF?t.fecha.toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'}):'Sin fecha'});
     g.count++;
+    const al=(t.centro?t.centro+'·':'')+t.almacen; g.alm[al]=(g.alm[al]||0)+1;
+    const who=t.creado||'—'; g.resp[who]=(g.resp[who]||0)+1;
   }
   const keys=Object.keys(by).sort((a,b)=> a==='sinfecha'?1:b==='sinfecha'?-1:a.localeCompare(b));
   if(!keys.length){if(chartOrigen){chartOrigen.destroy();chartOrigen=null;}cv.parentElement.style.height='';cap.innerHTML='<span class="hempty">Sin datos para el filtro seleccionado.</span>';return;}
+  const info=keys.map(k=>by[k]);
   const labels=keys.map(k=>by[k].label);
   const vals=keys.map(k=>by[k].count);
   const colors=keys.map(k=>by[k].bucket==='crit'?'#C4432B':'#2F8F5B');
@@ -450,7 +453,13 @@ function renderOrigen(){
   if(chartOrigen)chartOrigen.destroy();
   chartOrigen=new Chart(cv,{type:'bar',data:{labels,datasets:[{label:'Pendientes',data:vals,backgroundColor:colors,borderRadius:4,maxBarThickness:48}]},options:{
     responsive:true,maintainAspectRatio:false,animation:IS_MOBILE?false:{duration:350},
-    plugins:{legend:{display:false},datalabels:{display:labels.length<=24,anchor:'end',align:'top',color:'#2A211B',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{title:it=>'Creado '+it[0].label,label:it=>NF.format(it.raw)+' pendientes'}}},
+    plugins:{legend:{display:false},datalabels:{display:labels.length<=24,anchor:'end',align:'top',color:'#2A211B',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},
+      tooltip:{callbacks:{
+        title:it=>'Creado '+info[it[0].dataIndex].full,
+        label:it=>{const g=info[it.dataIndex];const l=[`${NF.format(g.count)} pendientes`];if(g.dias!=null)l.push(`${g.dias} días (${g.bucket==='crit'?'atrasado':'al día'})`);return l;},
+        afterLabel:it=>{const g=info[it.dataIndex];const al=Object.entries(g.alm).sort((a,b)=>b[1]-a[1]);const l=['Almacenes:'];al.slice(0,10).forEach(([k,v])=>l.push('  '+k+': '+v));if(al.length>10)l.push('  +'+(al.length-10)+' más');return l;},
+        footer:it=>{const g=info[it[0].dataIndex];const r=Object.entries(g.resp).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>k+' ('+v+')').join(', ');return r?'Responsable(s): '+r:'';}
+      }}},
     scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},maxRotation:0,autoSkip:true}},y:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter'}}}}}});
   requestAnimationFrame(()=>{if(chartOrigen)chartOrigen.resize();});
 }
