@@ -235,20 +235,20 @@
       <span class="dash">→</span>
       <input type="date" id="fHasta" aria-label="Hasta">
       <button class="chip sm" id="fClear">Todo</button>
-      <span class="drhint">Aplica a los gráficos de esta pestaña</span>
+      <span class="drhint">Filtra por <b>fecha de creación</b> (almacenes y creación) y por <b>día del reporte</b> (evolutivo)</span>
     </div>
     <div class="card">
-      <div class="hd"><h2>Almacenes con más pendientes</h2><span class="hint">Ranking del período · rojo = tiene atrasados</span></div>
+      <div class="hd"><h2>Almacenes con más pendientes</h2><span class="hint">Por fecha de creación · rojo = tiene atrasados · pasa el mouse para ver responsables</span></div>
       <div id="rankCap" class="histcap"></div>
       <div class="chart-box"><canvas id="chartRank"></canvas></div>
     </div>
     <div class="card" style="margin-top:18px">
-      <div class="hd"><h2>Evolución de traslados pendientes</h2><span class="hint">Un punto por día · la meta es que baje</span></div>
+      <div class="hd"><h2>Evolución de traslados pendientes</h2><span class="hint">Por día del reporte (la foto de cada día) · la meta es que baje</span></div>
       <div id="histCap" class="histcap"></div>
       <div class="chart-box"><canvas id="chartHist"></canvas></div>
     </div>
     <div class="card" style="margin-top:18px">
-      <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">De qué fechas viene el atraso actual</span></div>
+      <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">Por fecha de creación · de qué fechas viene el atraso actual</span></div>
       <div id="origCap" class="histcap"></div>
       <div class="chart-box"><canvas id="chartOrigen"></canvas></div>
     </div>
@@ -461,17 +461,31 @@ function renderRankAlm(){
   const data=snapEnRango();
   const multi=new Set(data.map(t=>t.centro)).size>1;
   const by={};
-  for(const t of data){const k=t.centro+'|'+t.almacen;const g=by[k]||(by[k]={label:(multi?t.centro+'·':'')+t.almacen,count:0,crit:0});g.count++;if(t.bucket==='crit')g.crit++;}
-  const arr=Object.values(by).sort((a,b)=>b.count-a.count);
-  if(!arr.length){if(chartRank){chartRank.destroy();chartRank=null;}cv.parentElement.style.height='';cap.innerHTML='<span class="hempty">Sin datos para el filtro/período seleccionado.</span>';return;}
+  for(const t of data){
+    const k=t.centro+'|'+t.almacen;
+    const g=by[k]||(by[k]={label:(multi?t.centro+'·':'')+t.almacen,count:0,crit:0,ok:0,maxDias:0,resp:{}});
+    g.count++;
+    if(t.bucket==='crit')g.crit++; else g.ok++;
+    if(t.dias!=null && t.dias>g.maxDias) g.maxDias=t.dias;
+    const who=t.creado||'—'; g.resp[who]=(g.resp[who]||0)+1;
+  }
+  const full=Object.values(by).sort((a,b)=>b.count-a.count);
+  if(!full.length){if(chartRank){chartRank.destroy();chartRank=null;}cv.parentElement.style.height='';cap.innerHTML='<span class="hempty">Sin datos para el filtro/período seleccionado.</span>';return;}
+  const TOP=15;const arr=full.slice(0,TOP);
   const labels=arr.map(a=>a.label);const vals=arr.map(a=>a.count);const colors=arr.map(a=>a.crit>0?'#C4432B':'#2F8F5B');
-  const peor=arr[0];
-  cap.innerHTML=`<span class="hnow">Más pendientes: <b>${peor.label}</b> (${NF.format(peor.count)})</span><span class="delta flat">${arr.length} almac${arr.length===1?'én':'enes'}</span>`;
+  const peor=full[0];const extra=full.length>TOP?` (top ${TOP} de ${full.length})`:'';
+  cap.innerHTML=`<span class="hnow">Peor: <b>${peor.label}</b> (${NF.format(peor.count)})</span><span class="delta flat">${full.length} almac${full.length===1?'én':'enes'}${extra}</span>`;
   cv.parentElement.style.height=Math.max(140,arr.length*34+34)+'px';
+  const respTop=a=>Object.entries(a.resp).sort((x,y)=>y[1]-x[1]).slice(0,3).map(([k,v])=>`${k} (${v})`).join(', ');
   if(chartRank)chartRank.destroy();
   chartRank=new Chart(cv,{type:'bar',data:{labels,datasets:[{label:'Pendientes',data:vals,backgroundColor:colors,borderRadius:4,maxBarThickness:26}]},options:{
     indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:IS_MOBILE?false:{duration:350},layout:{padding:{right:30}},
-    plugins:{legend:{display:false},datalabels:{anchor:'end',align:'right',color:'#2A211B',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{label:it=>NF.format(it.raw)+' pendientes'}}},
+    plugins:{legend:{display:false},datalabels:{anchor:'end',align:'right',color:'#2A211B',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},
+      tooltip:{multiKeyBackground:'#fff',callbacks:{
+        title:it=>arr[it[0].dataIndex].label,
+        label:it=>{const a=arr[it.dataIndex];return [`${NF.format(a.count)} pendientes`,`Atrasados: ${a.crit} · Al día: ${a.ok}`,`Más antiguo: ${a.maxDias} días`];},
+        afterLabel:it=>{const a=arr[it.dataIndex];const r=respTop(a);return r?'Responsable(s): '+r:'';}
+      }}},
     scales:{x:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter',size:11}}},y:{grid:{display:false},ticks:{font:{family:'Archivo Narrow',size:13,weight:700}}}}}});
   requestAnimationFrame(()=>{if(chartRank)chartRank.resize();});
 }
