@@ -200,24 +200,17 @@
 </header>
 
 <main class="wrap" id="app" style="display:none">
-  <div class="scope" id="scope"></div>
+  <div class="scope scopebar" id="scope"></div>
   <div class="kpis" id="kpis"></div>
   <div class="centros hidden" id="centros"></div>
 
   <div class="tabs">
     <button class="tab active" data-tab="resumen">Resumen</button>
+    <button class="tab" data-tab="evolucion">Evolución</button>
     <button class="tab" data-tab="detalle">Detalle de traslados</button>
   </div>
 
   <section class="panel active" id="panel-resumen">
-    <div class="daterange" id="daterange">
-      <span class="k">Rango de fechas</span>
-      <input type="date" id="fDesde" aria-label="Desde">
-      <span class="dash">→</span>
-      <input type="date" id="fHasta" aria-label="Hasta">
-      <button class="chip sm" id="fClear">Todo</button>
-      <span class="drhint">Aplica a los gráficos de evolución y de fecha de creación</span>
-    </div>
     <div class="grid2">
       <div class="card">
         <div class="hd"><h2>Traslados por almacén</h2><span class="hint">Por antigüedad</span></div>
@@ -232,16 +225,33 @@
         <div id="almWrap"></div>
       </div>
     </div>
-      <div class="card" style="margin-top:18px">
-        <div class="hd"><h2>Evolución de traslados pendientes</h2><span class="hint">Un punto por día · respeta el filtro de arriba</span></div>
-        <div id="histCap" class="histcap"></div>
-        <div class="chart-box"><canvas id="chartHist"></canvas></div>
-      </div>
-      <div class="card" style="margin-top:18px">
-        <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">De qué fechas viene el atraso · respeta el filtro</span></div>
-        <div id="origCap" class="histcap"></div>
-        <div class="chart-box"><canvas id="chartOrigen"></canvas></div>
-      </div>
+  </section>
+
+  <section class="panel" id="panel-evolucion">
+    <div class="scope scopebar" id="scopeEvo"></div>
+    <div class="daterange" id="daterange">
+      <span class="k">Rango de fechas</span>
+      <input type="date" id="fDesde" aria-label="Desde">
+      <span class="dash">→</span>
+      <input type="date" id="fHasta" aria-label="Hasta">
+      <button class="chip sm" id="fClear">Todo</button>
+      <span class="drhint">Aplica a los gráficos de esta pestaña</span>
+    </div>
+    <div class="card">
+      <div class="hd"><h2>Almacenes con más pendientes</h2><span class="hint">Ranking del período · rojo = tiene atrasados</span></div>
+      <div id="rankCap" class="histcap"></div>
+      <div class="chart-box"><canvas id="chartRank"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <div class="hd"><h2>Evolución de traslados pendientes</h2><span class="hint">Un punto por día · la meta es que baje</span></div>
+      <div id="histCap" class="histcap"></div>
+      <div class="chart-box"><canvas id="chartHist"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">De qué fechas viene el atraso actual</span></div>
+      <div id="origCap" class="histcap"></div>
+      <div class="chart-box"><canvas id="chartOrigen"></canvas></div>
+    </div>
   </section>
 
   <section class="panel" id="panel-detalle">
@@ -272,7 +282,7 @@ const NF = new Intl.NumberFormat('es-CL');
 const $ = s=>document.querySelector(s);
 const norm = s=>String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 const FILE='monitor_de_entregas.xlsx';
-let TRAS=[], CENTROS=[], ALMACENES=[], chart=null, HIST=null, chartHist=null, chartOrigen=null;
+let TRAS=[], CENTROS=[], ALMACENES=[], chart=null, HIST=null, chartHist=null, chartOrigen=null, chartRank=null;
 let FDESDE='', FHASTA='';
 const inRange=iso=>(!FDESDE||iso>=FDESDE)&&(!FHASTA||iso<=FHASTA);
 
@@ -321,7 +331,7 @@ const scoped=()=>{let d=TRAS; if(CENTROS.length)d=d.filter(t=>CENTROS.includes(t
 function updateSeg(){document.querySelectorAll('#viewSeg button').forEach(b=>b.classList.toggle('on', (b.dataset.v==='mobile')===IS_MOBILE));document.body.classList.toggle('force-mobile', manualMode==='mobile');}
 
 function renderScope(){
-  const cs=centrosAll();const sb=$('#scope');const rows=['<div class="scope-note">Toca para filtrar · puedes elegir varios</div>'];
+  const cs=centrosAll();const rows=['<div class="scope-note">Toca para filtrar · puedes elegir varios</div>'];
   let r1='<div class="scope-row"><span class="k">Centro</span>';
   if(cs.length>1){
     r1+=`<button class="chip" data-c="__all" ${CENTROS.length===0?'data-on':''}>Todos</button>`;
@@ -335,10 +345,13 @@ function renderScope(){
     r2+=alms.map(a=>`<button class="chip sm" data-a="${a}" ${ALMACENES.includes(a)?'data-on':''}>${a}</button>`).join('');
     rows.push(r2+'</div>');
   }
-  sb.innerHTML=rows.join('');
-  sb.querySelectorAll('[data-on]').forEach(x=>x.classList.add('active'));
-  sb.querySelectorAll('[data-c]').forEach(ch=>ch.onclick=()=>{const v=ch.dataset.c; if(v==='__all')CENTROS=[]; else toggle(CENTROS,v); const valid=availAlmacenes(); ALMACENES=ALMACENES.filter(a=>valid.includes(a)); render();});
-  sb.querySelectorAll('[data-a]').forEach(ch=>ch.onclick=()=>{const v=ch.dataset.a; if(v==='__all')ALMACENES=[]; else toggle(ALMACENES,v); render();});
+  const html=rows.join('');
+  document.querySelectorAll('.scopebar').forEach(sb=>{
+    sb.innerHTML=html;
+    sb.querySelectorAll('[data-on]').forEach(x=>x.classList.add('active'));
+    sb.querySelectorAll('[data-c]').forEach(ch=>ch.onclick=()=>{const v=ch.dataset.c; if(v==='__all')CENTROS=[]; else toggle(CENTROS,v); const valid=availAlmacenes(); ALMACENES=ALMACENES.filter(a=>valid.includes(a)); render();});
+    sb.querySelectorAll('[data-a]').forEach(ch=>ch.onclick=()=>{const v=ch.dataset.a; if(v==='__all')ALMACENES=[]; else toggle(ALMACENES,v); render();});
+  });
 }
 
 function render(){
@@ -371,6 +384,7 @@ function render(){
   renderRows();
   renderHist();
   renderOrigen();
+  renderRankAlm();
 }
 
 function fmtDia(iso){const q=String(iso).split('-');return q.length===3?q[2]+'/'+q[1]:iso;}
@@ -439,6 +453,27 @@ function renderOrigen(){
     plugins:{legend:{display:false},datalabels:{display:labels.length<=24,anchor:'end',align:'top',color:'#2A211B',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{title:it=>'Creado '+it[0].label,label:it=>NF.format(it.raw)+' pendientes'}}},
     scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},maxRotation:0,autoSkip:true}},y:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter'}}}}}});
   requestAnimationFrame(()=>{if(chartOrigen)chartOrigen.resize();});
+}
+
+function snapEnRango(){const rng=(FDESDE||FHASTA);return scoped().filter(t=>{if(!rng)return true;if(!(t.fecha instanceof Date)||isNaN(t.fecha))return false;return inRange(isoLocal(t.fecha));});}
+function renderRankAlm(){
+  const cap=$('#rankCap');const cv=$('#chartRank');if(!cv)return;
+  const data=snapEnRango();
+  const multi=new Set(data.map(t=>t.centro)).size>1;
+  const by={};
+  for(const t of data){const k=t.centro+'|'+t.almacen;const g=by[k]||(by[k]={label:(multi?t.centro+'·':'')+t.almacen,count:0,crit:0});g.count++;if(t.bucket==='crit')g.crit++;}
+  const arr=Object.values(by).sort((a,b)=>b.count-a.count);
+  if(!arr.length){if(chartRank){chartRank.destroy();chartRank=null;}cv.parentElement.style.height='';cap.innerHTML='<span class="hempty">Sin datos para el filtro/período seleccionado.</span>';return;}
+  const labels=arr.map(a=>a.label);const vals=arr.map(a=>a.count);const colors=arr.map(a=>a.crit>0?'#C4432B':'#2F8F5B');
+  const peor=arr[0];
+  cap.innerHTML=`<span class="hnow">Más pendientes: <b>${peor.label}</b> (${NF.format(peor.count)})</span><span class="delta flat">${arr.length} almac${arr.length===1?'én':'enes'}</span>`;
+  cv.parentElement.style.height=Math.max(140,arr.length*34+34)+'px';
+  if(chartRank)chartRank.destroy();
+  chartRank=new Chart(cv,{type:'bar',data:{labels,datasets:[{label:'Pendientes',data:vals,backgroundColor:colors,borderRadius:4,maxBarThickness:26}]},options:{
+    indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:IS_MOBILE?false:{duration:350},layout:{padding:{right:30}},
+    plugins:{legend:{display:false},datalabels:{anchor:'end',align:'right',color:'#2A211B',font:{family:'Archivo Narrow',weight:700,size:12},formatter:v=>v},tooltip:{callbacks:{label:it=>NF.format(it.raw)+' pendientes'}}},
+    scales:{x:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter',size:11}}},y:{grid:{display:false},ticks:{font:{family:'Archivo Narrow',size:13,weight:700}}}}}});
+  requestAnimationFrame(()=>{if(chartRank)chartRank.resize();});
 }
 
 function renderResumen(data){
@@ -515,7 +550,7 @@ $('#q').oninput=renderRows;$('#sort').onchange=renderRows;
 $('#fDesde').onchange=()=>{FDESDE=$('#fDesde').value;render();};
 $('#fHasta').onchange=()=>{FHASTA=$('#fHasta').value;render();};
 $('#fClear').onclick=()=>{FDESDE='';FHASTA='';$('#fDesde').value='';$('#fHasta').value='';render();};
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='resumen')requestAnimationFrame(()=>{if(chart)chart.resize();if(chartHist)chartHist.resize();if(chartOrigen)chartOrigen.resize();});});
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));t.classList.add('active');$('#panel-'+t.dataset.tab).classList.add('active');{const tb=t.dataset.tab;requestAnimationFrame(()=>{if(tb==='resumen'&&chart)chart.resize();if(tb==='evolucion'){if(chartHist)chartHist.resize();if(chartOrigen)chartOrigen.resize();if(chartRank)chartRank.resize();}});}});
 updateSeg();
 loadPublished();
 </script>
