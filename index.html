@@ -221,8 +221,8 @@
         <div class="hd"><h2>Traslados por almacén</h2><span class="hint">Por antigüedad</span></div>
         <div class="chart-box"><canvas id="chart"></canvas></div>
         <div class="legend">
-          <span class="li"><span class="dot ok"></span> Al día · mismo día (0 d)</span>
-          <span class="li"><span class="dot crit"></span> Crítico · +1 día sin regularizar</span>
+          <span class="li"><span class="dot ok"></span> Al día · 0 a 2 días</span>
+          <span class="li"><span class="dot crit"></span> Atrasado · 3 días o más</span>
         </div>
       </div>
       <div class="card">
@@ -302,7 +302,7 @@ mq.addEventListener('change', ()=>{ if(manualMode===null){ IS_MOBILE=effMobile()
 const FIELDS={centro:['centro'],almacen:['almacen'],entrega:['entrega'],fecha:['entregasdea'],creado:['creadopor'],doc:['documentocompras'],posicion:['posicion'],material:['material'],denom:['denominposicion'],cantidad:['cantidadentrega'],unidad:['unmedidaventa'],proveedor:['proveedor'],nombreprov:['nombredelproveedor']};
 function buildGetter(row){const m={};const nk=Object.keys(row).map(k=>({k,n:norm(k)}));for(const[f,c]of Object.entries(FIELDS)){const h=nk.find(o=>c.includes(o.n));if(h)m[f]=h.k;}return(r,f)=>m[f]!==undefined?r[m[f]]:undefined;}
 function daysBetween(d){if(!(d instanceof Date)||isNaN(d))return null;const a=new Date();a.setHours(0,0,0,0);const b=new Date(d.getFullYear(),d.getMonth(),d.getDate());return Math.floor((a-b)/86400000);}
-const bucketOf=d=>d==null?'crit':d<=0?'ok':'crit';
+const bucketOf=d=>d==null?'crit':d<=2?'ok':'crit';
 const fmtDate=d=>(d instanceof Date&&!isNaN(d))?d.toLocaleDateString('es-CL',{day:'2-digit',month:'short',year:'2-digit'}):'—';
 
 function parse(wb){
@@ -375,8 +375,8 @@ function render(){
   $('#kpis').innerHTML=`
     <div class="kpi accent"><div class="lbl">Traslados pendientes</div><div class="val num">${NF.format(totalT)}</div><div class="foot">${NF.format(totalL)} líneas en tránsito</div></div>
     <div class="kpi"><div class="lbl">Almacenes</div><div class="val num">${NF.format(almCount)}</div><div class="foot">${scopeLbl}</div></div>
-    <div class="kpi ${crit?'alert':''}"><div class="lbl">Críticos (+1 día)</div><div class="val num">${NF.format(crit)}</div><div class="foot">${crit?'Requieren regularización':'Sin críticos'}</div></div>
-    <div class="kpi ${oldest&&oldest.dias>0?'alert':''}"><div class="lbl">Más antiguo</div><div class="val num">${oldest?NF.format(oldest.dias)+'<span style="font-size:15px"> d</span>':'—'}</div><div class="foot">${oldest?'Entrega '+oldest.entrega+' · '+oldest.centro+'·'+oldest.almacen:''}</div></div>`;
+    <div class="kpi ${crit?'alert':''}"><div class="lbl">Atrasados (3+ días)</div><div class="val num">${NF.format(crit)}</div><div class="foot">${crit?'Requieren regularización':'Sin atrasados'}</div></div>
+    <div class="kpi ${oldest&&oldest.dias>2?'alert':''}"><div class="lbl">Más antiguo</div><div class="val num">${oldest?NF.format(oldest.dias)+'<span style="font-size:15px"> d</span>':'—'}</div><div class="foot">${oldest?'Entrega '+oldest.entrega+' · '+oldest.centro+'·'+oldest.almacen:''}</div></div>`;
 
   const cb=$('#centros');
   if(cs.length>1){
@@ -457,7 +457,7 @@ function renderOrigen(){
   const nf=keys.filter(k=>k!=='sinfecha').length;
   const alcance=(CENTROS.length||ALMACENES.length)?' <span style="color:var(--muted);font-weight:400;font-size:12px">(filtrado)</span>':'';
   cap.innerHTML=`<span class="hnow"><b class="num">${NF.format(total)}</b> traslados pendientes${alcance}</span><span class="delta flat">${nf} fecha${nf===1?'':'s'} de creación</span>`;
-  cv.parentElement.style.height=(IS_MOBILE?230:280)+'px';
+  let hBox=IS_MOBILE?230:280; if(ORIG_MODE!=='total'){const perRow=IS_MOBILE?3:6; hBox+=Math.ceil(groupsSet.size/perRow)*20;} cv.parentElement.style.height=hBox+'px';
 
   const stacked=ORIG_MODE!=='total';
   let datasets;
@@ -467,7 +467,7 @@ function renderOrigen(){
     const groups=[...groupsSet].sort();
     datasets=groups.map((grp,i)=>({label:grp,data:keys.map(k=>by[k].grp[grp]||0),backgroundColor:PAL[i%PAL.length],borderRadius:2,maxBarThickness:48,stack:'s'}));
   }
-  const showLegend=stacked && groupsSet.size<=12;
+  const showLegend=stacked;
 
   const richTip={callbacks:{
     title:it=>'Creado '+info[it[0].dataIndex].full,
