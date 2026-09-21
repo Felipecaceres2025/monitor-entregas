@@ -190,6 +190,25 @@
   .segmini button+button{border-left:1px solid var(--line)}
   .segmini button.on{background:var(--chestnut);color:#fff}
   @media(max-width:720px){.segmini{margin-left:0}}
+  .fcwrap{max-height:420px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+  .fcrow{border-bottom:1px solid var(--line)}
+  .fcrow:last-child{border-bottom:none}
+  .fchead{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer}
+  .fchead:hover{background:#F6F2EA}
+  .fchead .fcar{color:var(--muted);font-size:11px;transition:transform .18s}
+  .fcrow.open .fcar{transform:rotate(90deg)}
+  .fchead .fcf{font-family:'Archivo Narrow';font-weight:700;font-size:14px}
+  .fcbody{display:none;padding:2px 14px 10px 34px;background:#FCFAF6}
+  .fcrow.open .fcbody{display:block}
+  .fcline{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .fcline:last-child{border-bottom:none}
+  .fcline .fcc{font-family:'Archivo Narrow';font-weight:700;color:var(--chestnut)}
+  .mtx{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+  .mtx th,.mtx td{border:1px solid var(--line);padding:6px 9px;font-size:12.5px;text-align:center;white-space:nowrap}
+  .mtx th{font-family:'Archivo Narrow';font-weight:700;background:#F6F2EA;color:var(--ink)}
+  .mtx th.fecha,.mtx td.fecha{text-align:left;font-family:'Archivo Narrow';font-weight:700}
+  .mtx td.tot,.mtx th.tot{font-weight:700;background:#F6F2EA}
+  .mtx tr.totrow td{font-weight:700;background:#EFE7DA}
 </style>
 </head>
 <body>
@@ -256,6 +275,15 @@
       <div class="hd"><h2>Pendientes por fecha de creación</h2><span class="hint">Por fecha de creación · desglose y detalle al pasar el mouse</span><div class="segmini" id="origMode"><button data-m="total">Total</button><button data-m="centro">Centro</button><button data-m="almacen">Almacén</button></div></div>
       <div id="origCap" class="histcap"></div>
       <div class="chart-box"><canvas id="chartOrigen"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <div class="hd"><h2>Detalle: pendientes por fecha y centro</h2><span class="hint">Toca una fecha para abrir sus centros · respeta filtros y período</span></div>
+      <div style="padding:12px 14px 14px"><div id="fcList" class="fcwrap"></div></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <div class="hd"><h2>Matriz: centro × fecha de creación</h2><span class="hint">Lista para capturar y enviar · acota con el rango de fechas</span></div>
+      <div id="mtxCap" class="histcap"></div>
+      <div style="padding:0 14px 14px;overflow-x:auto"><div id="mtx"></div></div>
     </div>
   </section>
 
@@ -392,6 +420,8 @@ function render(){
   renderHist();
   renderOrigen();
   renderRankAlm();
+  renderListaFC();
+  renderMatriz();
 }
 
 function fmtDia(iso){const q=String(iso).split('-');return q.length===3?q[2]+'/'+q[1]:iso;}
@@ -524,6 +554,58 @@ function renderRankAlm(){
       }}},
     scales:{x:{beginAtZero:true,grid:{color:'#E9E2D6'},ticks:{precision:0,font:{family:'Inter',size:11}}},y:{grid:{display:false},ticks:{font:{family:'Archivo Narrow',size:13,weight:700}}}}}});
   requestAnimationFrame(()=>{if(chartRank)chartRank.resize();});
+}
+
+function renderListaFC(){
+  const box=$('#fcList');if(!box)return;
+  const data=snapEnRango();
+  const by={};
+  for(const t of data){
+    const hasF=(t.fecha instanceof Date && !isNaN(t.fecha));
+    const key=hasF?isoLocal(t.fecha):'sinfecha';
+    const g=by[key]||(by[key]={total:0,centros:{},bucket:t.bucket,label:hasF?t.fecha.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'}):'Sin fecha'});
+    g.total++;
+    const c=t.centro||'—'; g.centros[c]=(g.centros[c]||0)+1;
+  }
+  const keys=Object.keys(by).sort((a,b)=> a==='sinfecha'?1:b==='sinfecha'?-1:a.localeCompare(b));
+  if(!keys.length){box.innerHTML='<div style="padding:24px;text-align:center;color:var(--muted)">Sin datos para el filtro/período.</div>';return;}
+  box.innerHTML=keys.map(k=>{
+    const g=by[k];const cls=g.bucket==='crit'?'crit':'ok';
+    const centros=Object.entries(g.centros).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="fcline"><span class="fcc">${c}</span><span class="num">${NF.format(v)}</span></div>`).join('');
+    return `<div class="fcrow"><div class="fchead"><span class="fcar">▶</span><span class="fcf">${g.label}</span><span class="badge ${cls}" style="margin-left:auto"><span class="dot ${cls}"></span>${NF.format(g.total)}</span></div><div class="fcbody">${centros}</div></div>`;
+  }).join('');
+  box.querySelectorAll('.fchead').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
+}
+
+function renderMatriz(){
+  const cap=$('#mtxCap');const box=$('#mtx');if(!box)return;
+  const data=snapEnRango();
+  const centros=[...new Set(data.map(t=>t.centro||'—'))].sort();
+  const byDate={};
+  for(const t of data){
+    const hasF=(t.fecha instanceof Date && !isNaN(t.fecha));
+    const key=hasF?isoLocal(t.fecha):'sinfecha';
+    const g=byDate[key]||(byDate[key]={cel:{},total:0,label:hasF?t.fecha.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'2-digit'}):'Sin fecha'});
+    const c=t.centro||'—'; g.cel[c]=(g.cel[c]||0)+1; g.total++;
+  }
+  let keys=Object.keys(byDate).sort((a,b)=> a==='sinfecha'?1:b==='sinfecha'?-1:b.localeCompare(a));
+  if(!keys.length){box.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted)">Sin datos para el filtro/período.</div>';cap.innerHTML='';return;}
+  const ranged=(FDESDE||FHASTA);let truncated=false;
+  if(!ranged && keys.length>20){keys=keys.slice(0,20);truncated=true;}
+  let maxCell=0;keys.forEach(k=>centros.forEach(c=>{const v=byDate[k].cel[c]||0;if(v>maxCell)maxCell=v;}));
+  const colTot={};centros.forEach(c=>colTot[c]=0);let grand=0;
+  const head='<tr><th class="fecha">Fecha</th>'+centros.map(c=>`<th>${c}</th>`).join('')+'<th class="tot">Total</th></tr>';
+  const body=keys.map(k=>{
+    const g=byDate[k];let rowTot=0;
+    const tds=centros.map(c=>{const v=g.cel[c]||0;rowTot+=v;colTot[c]+=v;const a=v>0?(0.10+0.80*(v/maxCell)):0;const col=a>0.55?'#fff':'var(--ink)';return `<td style="${v>0?`background:rgba(122,74,40,${a.toFixed(2)});color:${col}`:''}">${v>0?NF.format(v):''}</td>`;}).join('');
+    grand+=rowTot;
+    return `<tr><td class="fecha">${g.label}</td>${tds}<td class="tot">${NF.format(rowTot)}</td></tr>`;
+  }).join('');
+  const foot='<tr class="totrow"><td class="fecha">Total</td>'+centros.map(c=>`<td>${NF.format(colTot[c])}</td>`).join('')+`<td class="tot">${NF.format(grand)}</td></tr>`;
+  box.innerHTML=`<table class="mtx"><thead>${head}</thead><tbody>${body}${foot}</tbody></table>`;
+  const alc=(CENTROS.length||ALMACENES.length)?' · filtrado':'';
+  const periodo=ranged?`Período: ${FDESDE?fmtDia(FDESDE):'…'} a ${FHASTA?fmtDia(FHASTA):'…'}`:(truncated?'Últimas 20 fechas (acota con el rango)':'Todas las fechas');
+  cap.innerHTML=`<span class="hnow"><b class="num">${NF.format(grand)}</b> pendientes${alc}</span><span class="delta flat">${periodo}</span>`;
 }
 
 function renderResumen(data){
